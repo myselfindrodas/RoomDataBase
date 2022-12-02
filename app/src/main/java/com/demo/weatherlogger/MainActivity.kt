@@ -4,12 +4,15 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.app.ProgressDialog
+import android.content.ContentValues.TAG
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Bundle
+import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
@@ -67,19 +70,6 @@ class MainActivity : AppCompatActivity(), NoteClickInterface, NoteClickDeleteInt
 
         requestAllPermission()
 
-        locationManager =
-            this.getSystemService(AppCompatActivity.LOCATION_SERVICE) as LocationManager
-        fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this)
-        if (!locationManager!!.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-            || !locationManager!!.isProviderEnabled(LocationManager.GPS_PROVIDER)
-            || !locationManager!!.isProviderEnabled(LocationManager.PASSIVE_PROVIDER)
-        ) {
-
-            OnGPS()
-
-        } else {
-            getLocation()
-        }
 
         viewModal.allNotes.observe(this, Observer { list ->
             list?.let {
@@ -88,20 +78,6 @@ class MainActivity : AppCompatActivity(), NoteClickInterface, NoteClickDeleteInt
         })
 
     }
-
-
-    private fun OnGPS() {
-        val builder = AlertDialog.Builder(this)
-        builder.setMessage("Enable GPS").setCancelable(false).setPositiveButton(
-            "Yes"
-        ) { dialog, which -> startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) }
-            .setNegativeButton(
-                "No"
-            ) { dialog, which -> dialog.cancel() }
-        val alertDialog = builder.create()
-        alertDialog.show()
-    }
-
 
     private fun getLocation() {
 
@@ -119,7 +95,11 @@ class MainActivity : AppCompatActivity(), NoteClickInterface, NoteClickDeleteInt
             )
         } else {
 
-            setLocationListner()
+            val secondsDelayed = 1
+            Handler().postDelayed({
+                setLocationListner()
+            }, (secondsDelayed * 1000).toLong())
+
 
         }
     }
@@ -130,7 +110,7 @@ class MainActivity : AppCompatActivity(), NoteClickInterface, NoteClickDeleteInt
         val fusedLocationProviderClient =
             LocationServices.getFusedLocationProviderClient(this)
         // for getting the current location update after every 2 seconds with high accuracy
-        val locationRequest = LocationRequest().setInterval(2000).setFastestInterval(2000)
+        val locationRequest = LocationRequest().setInterval(60000).setFastestInterval(60000)
             .setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
         if (ActivityCompat.checkSelfPermission(
                 this,
@@ -143,21 +123,23 @@ class MainActivity : AppCompatActivity(), NoteClickInterface, NoteClickDeleteInt
 
             return
         }
-        fusedLocationProviderClient.requestLocationUpdates(
-            locationRequest,
-            object : LocationCallback() {
-                override fun onLocationResult(locationResult: LocationResult) {
-                    super.onLocationResult(locationResult)
-//                    Log.d(TAG, "lat long-->"+locationResult.locations[0].latitude+","+locationResult.locations[0].longitude)
-                    for (location in locationResult.locations) {
-                        if (location.latitude != null && location.longitude != null) {
+        locationCallback=object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                super.onLocationResult(locationResult)
+                for (location in locationResult.locations) {
+                    if (location.latitude != null && location.longitude != null) {
+                    Log.d(TAG, "lat long-->"+locationResult.locations[0].latitude+","+locationResult.locations[0].longitude)
 
                             currentWeather(location.latitude.toString(), location.longitude.toString())
-                        }
-                    }
 
+                    }
                 }
-            },
+
+            }
+        }
+        fusedLocationProviderClient.requestLocationUpdates(
+            locationRequest,
+            locationCallback,
             Looper.getMainLooper()
         )
     }
@@ -177,6 +159,7 @@ class MainActivity : AppCompatActivity(), NoteClickInterface, NoteClickDeleteInt
                     if (report.areAllPermissionsGranted()) {
                         Toast.makeText(applicationContext, "All permissions are granted!", Toast.LENGTH_SHORT).show()
 
+                        getLocation()
 
 
                     }
@@ -225,7 +208,7 @@ class MainActivity : AppCompatActivity(), NoteClickInterface, NoteClickDeleteInt
 
         if (locationCallback!=null){
             fusedLocationProviderClient?.removeLocationUpdates(locationCallback)
-
+            locationCallback==null
         }
         if (CheckConnectivity.getInstance(this).isOnline) {
             viewModel.weather(lat =lat, lon = lon, appid = "c9eacc120b3582f2901a18cd42ba8341")
@@ -314,10 +297,21 @@ class MainActivity : AppCompatActivity(), NoteClickInterface, NoteClickDeleteInt
     }
 
 
+    override fun onPause() {
+        super.onPause()
+        if (locationCallback!=null){
+            fusedLocationProviderClient?.removeLocationUpdates(locationCallback)
+            locationCallback==null
+
+        }
+    }
+
+
     override fun onDestroy() {
         super.onDestroy()
         if (locationCallback!=null){
             fusedLocationProviderClient?.removeLocationUpdates(locationCallback)
+            locationCallback==null
 
         }
     }
